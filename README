@@ -17,8 +17,6 @@
    17  git status
    18  mkdir -pv ./apps/{base,staging,production}/traefik  ./clusters/{production,staging} ./infrastructure/{sources,crds}
    19  ls
-   20  tree
-   21  apt install tree
    22  sudo apt install tree
    23  tree
    24  cat > ./apps/base/traefik/rbac.yaml <<EOF
@@ -235,7 +233,7 @@
   235              - "--providers.kubernetescrd.allowCrossNamespace=true"
   236              - "--certificatesresolvers.myresolver.acme.storage=/data/acme.json"
   237              - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
-  238              - "--certificatesresolvers.myresolver.acme.email=jakub.hajek+webinar@traefik.io"
+  238              - "--certificatesresolvers.myresolver.acme.email=unidaddy@gmail.com"
   239  EOF
   240  cat > ./apps/production/traefik/kustomization.yaml << EOF
   241  ---
@@ -278,7 +276,7 @@
   278              - "--providers.kubernetescrd.allowCrossNamespace=true"
   279              - "--certificatesresolvers.myresolver.acme.storage=/data/acme.json"
   280              - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
-  281              - "--certificatesresolvers.myresolver.acme.email=jakub.hajek+webinar@traefik.io"
+  281              - "--certificatesresolvers.myresolver.acme.email=unixdaddy@gmail.com"
   282              - "--certificatesresolvers.myresolver.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
   283  EOF
   284  cat > ./apps/staging/traefik/kustomization.yaml << EOF
@@ -459,13 +457,10 @@
   459  cd flux-traefik-demo/
   460  ls
   461  more ../.config/gh/hosts.yml 
-  462  export GITHUB_TOKEN=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
-  463  git remote
-  464  history | grep gh
-  465  kubectl get contexts
-  466  kubectl config contexts
+  462  export GITHUB_TOKEN=XXXXXX
+
+
   467  source <(kubectl completion bash)
-  468  kubectl config get-contexts
   469  pwd
   470  git status
   471  git add .
@@ -474,11 +469,6 @@
   474  git config --global user.name "traefix"
   475  git commit -m "initial commit"
   476  more apps/base/traefik/traefik.yaml
-  477  more apps/production/traefik/traefik.yaml
-  478  more apps/production/traefik/traefik-patch.yaml 
-  479  more apps/staging/traefik/traefik-patch.yaml 
-  480  vim apps/production/traefik/traefik-patch.yaml 
-  481  vim apps/staging/traefik/traefik-patch.yaml 
   482  more apps/production/traefik/traefik-patch.yaml 
   483  more apps/staging/traefik/traefik-patch.yaml 
   484  git status
@@ -486,21 +476,13 @@
   486  git commit -m "update"
   487  git status
   488  git push
-  489  git -M main
-  490  tree
-  491  apt instal tree
-  492  history
   493  sudo apt install tree
   494  tree
   495  git branch -M main
   496  git push --set-upstream origin main
-  497  git remote
   498  git remote -v
-  499  flux bootstrap github --branch=main --context=t1.aws.traefiklabs.tech --owner=${GITHUB_USER} --repository=${GITHUB_REPO} --path=clusters/staging --components-extra=image-reflector-controller,image-automation-controller  \
-  500  flux bootstrap github --branch=main --owner=unixdaddy --repository=flux-traefik-demo --path=clusters/production --components-extra=image-reflector-controller,image-automation-controller  --personal
   501  curl -s https://fluxcd.io/install.sh | sudo bash 
-  502  gh
-  503  flux bootstrap github --branch=main --owner=unixdaddy --repository=flux-traefik-demo --path=clusters/production --components-extra=image-reflector-controller,image-automation-controller  --personal
+  500  flux bootstrap github --branch=main --owner=unixdaddy --repository=flux-traefik-demo --path=clusters/production --components-extra=image-reflector-controller,image-automation-controller  --personal
   504  kubectl get ns
   505  kubectl get all -n traefik-production 
   506  kubectl describe deployment -n traefik-production traefik 
@@ -508,63 +490,6 @@
   508  tree
   509  more infrastructure/crds/traefik-crds.yaml 
   510  ls
-  511  cat > ./apps/base/whoami/deployment.yaml << EOF
----
-kind: Deployment
-apiVersion: apps/v1
-metadata:
-  name: whoamiv1
-  labels:
-    name: whoamiv1
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      task: whoamiv1
-  template:
-    metadata:
-      labels:
-        task: whoamiv1
-    spec:
-      containers:
-        - name: whoamiv1
-          image: traefik/traefikee-webapp-demo:v2
-          args:
-            - -ascii
-            - -name=FOO
-          ports:
-            - containerPort: 80
-          readinessProbe:
-            httpGet:
-              path: /ping
-              port: 80
-            failureThreshold: 1
-            initialDelaySeconds: 2
-            periodSeconds: 3
-            successThreshold: 1
-            timeoutSeconds: 2
-          resources:
-            requests:
-              cpu: 10m
-              memory: 128Mi
-            limits:
-              cpu: 200m
-              memory: 256Mi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: whoamiv1
-  namespace: app
-spec:
-  ports:
-    - name: http
-      port: 80
-  selector:
-    task: whoamiv1
-EOF
-
-  512  ls
   513  mkdir -pv ./apps/{base,staging,production}/whoami
   514  cat > ./apps/base/whoami/deployment.yaml << EOF
 ---
@@ -687,23 +612,13 @@ metadata:
 spec:
   routes:
    - kind: Rule
-     match: Host(\`whoami.t1.demo.traefiklabs.tech\`)
+     match: Host(`DOES NOT WORK`)
      services:
         - kind: Service
           name: whoamiv1
           port: 80
 EOF
 
-  522  kubectl get all -n traefik-production 
-  523  vim ./apps/staging/whoami/ingressroute-patch.yaml
-  524  more ./apps/staging/whoami/ingressroute-patch.yaml
-  525  kubectl explain IngressRoute
-  526  kubectl explain IngressRoute.spec
-  527  kubectl explain IngressRoute.spec,routes
-  528  kubectl explain IngressRoute.spec.routes
-  529  kubectl explain IngressRoute.spec.routes.match
-  530  vim ./apps/staging/whoami/ingressroute-patch.yaml
-  531  tree
   532  cat > ./apps/staging/whoami/kustomization.yaml << EOF
 ---
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -744,6 +659,8 @@ spec:
             - -name=PRODUCTION
 EOF
 
+kubectl get all -n traefik-production <-- get load balancer external IP address
+
   536  cat > ./apps/production/whoami/ingressroute-patch.yaml << EOF
 ---
 apiVersion: traefik.containo.us/v1alpha1
@@ -753,7 +670,7 @@ metadata:
 spec:
   routes:
    - kind: Rule
-     match: Host(\`whoami.t2.demo.traefiklabs.tech\`)
+     match: Host(`LOADBALANCER EXTERNAL IP`)
      services:
         - kind: Service
           name: whoamiv1
@@ -761,7 +678,7 @@ spec:
 EOF
 
   537  kubectl get all -n traefik-production 
-  538  vim apps/production/whoami/ingressroute-patch.yaml 
+
   539  cat > ./apps/production/whoami/kustomization.yaml << EOF
 ---
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -776,6 +693,6 @@ patchesStrategicMerge:
   - ingressroute-patch.yaml
 EOF
 
-  540  tree
-  541  history
-  542  history > README
+git add
+git commit
+git push
