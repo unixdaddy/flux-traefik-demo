@@ -1,0 +1,781 @@
+    1  wget https://github.com/cli/cli/releases/download/v2.4.0/gh_2.4.0_linux_amd64.tar.gz
+    2  ls
+    3  tar zxf gh_2.4.0_linux_amd64.tar.gz 
+    4  ls
+    5  mv gh_2.4.0_linux_amd64 /usr/local/bin/gh
+    6  sudo mv gh_2.4.0_linux_amd64 /usr/local/bin/gh
+    7  gh
+    8  gh config
+    9  gh config set
+   10  gh config set --help
+   11  gh
+   12  gh auth
+   13  gh auth login
+   14  gh repo create flux-traefik-demo --public --description "Flux and Traefik - demo"  --clone
+   15  ls
+   16  cd flux-traefik-demo/
+   17  git status
+   18  mkdir -pv ./apps/{base,staging,production}/traefik  ./clusters/{production,staging} ./infrastructure/{sources,crds}
+   19  ls
+   20  tree
+   21  apt install tree
+   22  sudo apt install tree
+   23  tree
+   24  cat > ./apps/base/traefik/rbac.yaml <<EOF
+   25  ---
+   26  kind: ClusterRole
+   27  apiVersion: rbac.authorization.k8s.io/v1
+   28  metadata:
+   29    name: traefik-ingress-controller
+   30  rules:
+   31    - apiGroups:
+   32        - ""
+   33      resources:
+   34        - services
+   35        - endpoints
+   36        - secrets
+   37      verbs:
+   38        - get
+   39        - list
+   40        - watch
+   41    - apiGroups:
+   42        - extensions
+   43        - networking.k8s.io
+   44      resources:
+   45        - ingresses
+   46        - ingressclasses
+   47      verbs:
+   48        - get
+   49        - list
+   50        - watch
+   51    - apiGroups:
+   52        - extensions
+   53      resources:
+   54        - ingresses/status
+   55      verbs:
+   56        - update
+   57    - apiGroups:
+   58        - traefik.containo.us
+   59      resources:
+   60        - middlewares
+   61        - middlewaretcps
+   62        - ingressroutes
+   63        - traefikservices
+   64        - ingressroutetcps
+   65        - ingressrouteudps
+   66        - tlsoptions
+   67        - tlsstores
+   68        - serverstransports
+   69      verbs:
+   70        - get
+   71        - list
+   72        - watch
+   73  ---
+   74  kind: ServiceAccount
+   75  apiVersion: v1
+   76  metadata:
+   77    name: traefik-ingress-controller
+   78    namespace: traefik
+   79  ---
+   80  kind: ClusterRoleBinding
+   81  apiVersion: rbac.authorization.k8s.io/v1
+   82  metadata:
+   83    name: traefik-ingress-controller
+   84  roleRef:
+   85    apiGroup: rbac.authorization.k8s.io
+   86    kind: ClusterRole
+   87    name: traefik-ingress-controller
+   88  subjects:
+   89    - kind: ServiceAccount
+   90      name: traefik-ingress-controller
+   91      namespace: traefik
+   92  EOF
+   93  tree
+   94  cat > ./apps/base/traefik/traefik.yaml << EOF
+   95  ---
+   96  apiVersion: apps/v1
+   97  kind: Deployment
+   98  metadata:
+   99    name: traefik
+  100    labels:
+  101      app.kubernetes.io/instance: traefik
+  102      app.kubernetes.io/name: traefik
+  103  spec:
+  104    replicas: 1
+  105    selector:
+  106      matchLabels:
+  107        app.kubernetes.io/name: traefik
+  108        app.kubernetes.io/instance: traefik
+  109    template:
+  110      metadata:
+  111        labels:
+  112          app.kubernetes.io/name: traefik
+  113          app.kubernetes.io/instance: traefik
+  114      spec:
+  115        serviceAccountName: traefik-ingress-controller
+  116        terminationGracePeriodSeconds: 60
+  117        containers:
+  118          - name: traefik
+  119            image: traefik:2.5.4
+  120            args:
+  121              - "--entryPoints.web.address=:8000/tcp"
+  122              - "--entryPoints.websecure.address=:8443/tcp"
+  123              - "--entryPoints.traefik.address=:9000/tcp"
+  124              - "--api=true"
+  125              - "--api.dashboard=true"
+  126              - "--ping=true"
+  127              - "--providers.kubernetescrd"
+  128              - "--providers.kubernetescrd.allowCrossNamespace=true"
+  129            readinessProbe:
+  130              httpGet:
+  131                path: /ping
+  132                port: 9000
+  133              failureThreshold: 1
+  134              initialDelaySeconds: 5
+  135              periodSeconds: 5
+  136              successThreshold: 1
+  137              timeoutSeconds: 2
+  138            livenessProbe:
+  139              httpGet:
+  140                path: /ping
+  141                port: 9000
+  142              failureThreshold: 3
+  143              initialDelaySeconds: 5
+  144              periodSeconds: 5
+  145              successThreshold: 1
+  146              timeoutSeconds: 2
+  147            resources:
+  148              limits:
+  149                cpu: 1000m
+  150                memory: 1000Mi
+  151              requests:
+  152                cpu: 100m
+  153                memory: 50Mi
+  154            ports:
+  155              - name: web
+  156                containerPort: 8000
+  157                protocol: TCP
+  158              - name: websecure
+  159                containerPort: 8443
+  160                protocol: TCP
+  161              - name: traefik
+  162                containerPort: 9000
+  163                protocol: TCP
+  164            volumeMounts:
+  165              - mountPath: /data
+  166                name: storage-volume
+  167        volumes:
+  168          - name: storage-volume
+  169            emptyDir: {}
+  170  EOF
+  171  tree
+  172  cat > ./apps/base/traefik/svc.yaml << EOF
+  173  ---
+  174  apiVersion: v1
+  175  kind: Service
+  176  metadata:
+  177    name: traefik
+  178    labels:
+  179      app.kubernetes.io/instance: traefik
+  180      app.kubernetes.io/name: traefik
+  181  spec:
+  182    selector:
+  183      app.kubernetes.io/instance: traefik
+  184      app.kubernetes.io/name: traefik
+  185    type: LoadBalancer
+  186    externalTrafficPolicy: Local
+  187    ports:
+  188      - port: 80
+  189        name: web
+  190        targetPort: web
+  191        protocol: TCP
+  192      - port: 443
+  193        name: websecure
+  194        targetPort: websecure
+  195        protocol: TCP
+  196  EOF
+  197  tree
+  198  cat > ./apps/base/traefik/kustomization.yaml << EOF
+  199  ---
+  200  apiVersion: kustomize.config.k8s.io/v1beta1
+  201  kind: Kustomization
+  202  resources:
+  203    - rbac.yaml
+  204    - traefik.yaml
+  205    - svc.yaml
+  206  EOF
+  207  tree
+  208  echo Production
+  209  cat > ./apps/production/traefik/namespace.yaml << EOF
+  210  ---
+  211  apiVersion: v1
+  212  kind: Namespace
+  213  metadata:
+  214    name: traefik-production
+  215  EOF
+  216  cat > ./apps/production/traefik/traefik-patch.yaml << EOF
+  217  ---
+  218  apiVersion: apps/v1
+  219  kind: Deployment
+  220  metadata:
+  221    name: traefik
+  222  spec:
+  223    template:
+  224      spec:
+  225        containers:
+  226          - name: traefik
+  227            args:
+  228              - "--entryPoints.web.address=:8000/tcp"
+  229              - "--entryPoints.websecure.address=:8443/tcp"
+  230              - "--entryPoints.traefik.address=:9000/tcp"
+  231              - "--api=true"
+  232              - "--api.dashboard=true"
+  233              - "--ping=true"
+  234              - "--providers.kubernetescrd"
+  235              - "--providers.kubernetescrd.allowCrossNamespace=true"
+  236              - "--certificatesresolvers.myresolver.acme.storage=/data/acme.json"
+  237              - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+  238              - "--certificatesresolvers.myresolver.acme.email=jakub.hajek+webinar@traefik.io"
+  239  EOF
+  240  cat > ./apps/production/traefik/kustomization.yaml << EOF
+  241  ---
+  242  apiVersion: kustomize.config.k8s.io/v1beta1
+  243  kind: Kustomization
+  244  namespace: traefik-production
+  245  resources:
+  246    - namespace.yaml
+  247    - ../../base/traefik
+  248  patchesStrategicMerge:
+  249    - traefik-patch.yaml
+  250  EOF
+  251  echo Staging
+  252  cat > ./apps/staging/traefik/namespace.yaml << EOF
+  253  ---
+  254  apiVersion: v1
+  255  kind: Namespace
+  256  metadata:
+  257    name: traefik-staging
+  258  EOF
+  259  cat > ./apps/staging/traefik/traefik-patch.yaml << EOF
+  260  ---
+  261  apiVersion: apps/v1
+  262  kind: Deployment
+  263  metadata:
+  264    name: traefik
+  265  spec:
+  266    template:
+  267      spec:
+  268        containers:
+  269          - name: traefik
+  270            args:
+  271              - "--entryPoints.web.address=:8000/tcp"
+  272              - "--entryPoints.websecure.address=:8443/tcp"
+  273              - "--entryPoints.traefik.address=:9000/tcp"
+  274              - "--api=true"
+  275              - "--api.dashboard=true"
+  276              - "--ping=true"
+  277              - "--providers.kubernetescrd"
+  278              - "--providers.kubernetescrd.allowCrossNamespace=true"
+  279              - "--certificatesresolvers.myresolver.acme.storage=/data/acme.json"
+  280              - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+  281              - "--certificatesresolvers.myresolver.acme.email=jakub.hajek+webinar@traefik.io"
+  282              - "--certificatesresolvers.myresolver.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+  283  EOF
+  284  cat > ./apps/staging/traefik/kustomization.yaml << EOF
+  285  ---
+  286  apiVersion: kustomize.config.k8s.io/v1beta1
+  287  kind: Kustomization
+  288  namespace: traefik-staging
+  289  resources:
+  290    - namespace.yaml
+  291    - ../../base/traefik
+  292  patchesStrategicMerge:
+  293    - traefik-patch.yaml
+  294  EOF
+  295  echo Infrastructure 
+  296  cat > ./infrastructure/crds/traefik-crds.yaml << EOF
+  297  ---
+  298  apiVersion: source.toolkit.fluxcd.io/v1beta1
+  299  kind: GitRepository
+  300  metadata:
+  301    name: traefik-crds
+  302    namespace: flux-system
+  303  spec:
+  304    interval: 30m
+  305    url: https://github.com/traefik/traefik-helm-chart.git
+  306    ref:
+  307      tag: v10.3.0
+  308    ignore: |
+  309      # exclude all
+  310      /*
+  311      # path to crds
+  312      !/traefik/crds/
+  313  ---
+  314  apiVersion: kustomize.toolkit.fluxcd.io/v1beta1
+  315  kind: Kustomization
+  316  metadata:
+  317    name: traefik-api-crds
+  318    namespace: flux-system
+  319  spec:
+  320    interval: 15m
+  321    prune: false
+  322    sourceRef:
+  323      kind: GitRepository
+  324      name: traefik-crds
+  325      namespace: flux-system
+  326    healthChecks:
+  327    - apiVersion: apiextensions.k8s.io/v1
+  328      kind: CustomResourceDefinition
+  329      name: ingressroutes.traefik.containo.us
+  330    - apiVersion: apiextensions.k8s.io/v1
+  331      kind: CustomResourceDefinition
+  332      name: ingressroutetcps.traefik.containo.us
+  333    - apiVersion: apiextensions.k8s.io/v1
+  334      kind: CustomResourceDefinition
+  335      name: ingressrouteudps.traefik.containo.us
+  336    - apiVersion: apiextensions.k8s.io/v1
+  337      kind: CustomResourceDefinition
+  338      name: middlewares.traefik.containo.us
+  339    - apiVersion: apiextensions.k8s.io/v1
+  340      kind: CustomResourceDefinition
+  341      name: middlewaretcps.traefik.containo.us
+  342    - apiVersion: apiextensions.k8s.io/v1
+  343      kind: CustomResourceDefinition
+  344      name: serverstransports.traefik.containo.us
+  345    - apiVersion: apiextensions.k8s.io/v1
+  346      kind: CustomResourceDefinition
+  347      name: tlsoptions.traefik.containo.us
+  348    - apiVersion: apiextensions.k8s.io/v1
+  349      kind: CustomResourceDefinition
+  350      name: tlsstores.traefik.containo.us
+  351    - apiVersion: apiextensions.k8s.io/v1
+  352      kind: CustomResourceDefinition
+  353      name: traefikservices.traefik.containo.us
+  354  EOF
+  355  cat > ./infrastructure/crds/kustomization.yaml << EOF
+  356  ---
+  357  apiVersion: kustomize.config.k8s.io/v1beta1
+  358  kind: Kustomization
+  359  namespace: flux-system
+  360  resources:
+  361    - traefik-crds.yaml
+  362  EOF
+  363  cat > ./infrastructure/kustomization.yaml << EOF
+  364  ---
+  365  apiVersion: kustomize.config.k8s.io/v1beta1
+  366  kind: Kustomization
+  367  resources:
+  368    - crds
+  369  EOF
+  370  tree
+  371  echo flux
+  372  cat > ./clusters/production/apps.yaml << EOF
+  373  ---
+  374  apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+  375  kind: Kustomization
+  376  metadata:
+  377    name: apps
+  378    namespace: flux-system
+  379  spec:
+  380    interval: 10m0s
+  381    dependsOn:
+  382      - name: infrastructure
+  383    sourceRef:
+  384      kind: GitRepository
+  385      name: flux-system
+  386    path: ./apps/production
+  387    prune: true
+  388    wait: true
+  389  EOF
+  390  cat > ./clusters/production/infrastructure.yaml << EOF
+  391  ---
+  392  apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+  393  kind: Kustomization
+  394  metadata:
+  395    name: infrastructure
+  396    namespace: flux-system
+  397  spec:
+  398    interval: 10m0s
+  399    sourceRef:
+  400      kind: GitRepository
+  401      name: flux-system
+  402    path: ./infrastructure
+  403    prune: true
+  404    wait: true
+  405  EOF
+  406  cat > ./clusters/staging/apps.yaml << EOF
+  407  ---
+  408  apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+  409  kind: Kustomization
+  410  metadata:
+  411    name: apps
+  412    namespace: flux-system
+  413  spec:
+  414    interval: 10m0s
+  415    dependsOn:
+  416      - name: infrastructure
+  417    sourceRef:
+  418      kind: GitRepository
+  419      name: flux-system
+  420    path: ./apps/staging
+  421    prune: true
+  422    wait: true
+  423  EOF
+  424  cat > ./clusters/staging/infrastructure.yaml << EOF
+  425  apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+  426  kind: Kustomization
+  427  metadata:
+  428    name: infrastructure
+  429    namespace: flux-system
+  430  spec:
+  431    interval: 10m0s
+  432    sourceRef:
+  433      kind: GitRepository
+  434      name: flux-system
+  435    path: ./infrastructure
+  436    prune: true
+  437    wait: true
+  438  EOF
+  439  tree
+  440  curl -s https://fluxcd.io/install.sh | sudo bash 
+  441  flux --help
+  442  export GITHUB_USERNAME=unixdaddy 
+  443  ls
+  444  ls -al 
+  445  ls ../
+  446  ls -a ../
+  447  more  ../.gitconfig 
+  448  more  ../.config/gh/config.yml 
+  449  gcloud services enable container.googleapis.com 
+  450  glound config list
+  451  gloud config configuration list
+  452  glcoud config configuration list
+  453  gcloud config configuration list
+  454  gcloud config configurations list
+  455  gcloud config set compute/zone us-west2-a 
+  456  gcloud container clusters create test --machine-type=e2-standard-2 
+  457  gcloud config set project $(gcloud projects list --filter="project_id:playground*" --format="value(project_id)") 
+  458  ls
+  459  cd flux-traefik-demo/
+  460  ls
+  461  more ../.config/gh/hosts.yml 
+  462  export GITHUB_TOKEN=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
+  463  git remote
+  464  history | grep gh
+  465  kubectl get contexts
+  466  kubectl config contexts
+  467  source <(kubectl completion bash)
+  468  kubectl config get-contexts
+  469  pwd
+  470  git status
+  471  git add .
+  472  git commit -m "initial commit"
+  473  git config --global user.email "traefix@now"
+  474  git config --global user.name "traefix"
+  475  git commit -m "initial commit"
+  476  more apps/base/traefik/traefik.yaml
+  477  more apps/production/traefik/traefik.yaml
+  478  more apps/production/traefik/traefik-patch.yaml 
+  479  more apps/staging/traefik/traefik-patch.yaml 
+  480  vim apps/production/traefik/traefik-patch.yaml 
+  481  vim apps/staging/traefik/traefik-patch.yaml 
+  482  more apps/production/traefik/traefik-patch.yaml 
+  483  more apps/staging/traefik/traefik-patch.yaml 
+  484  git status
+  485  git add .
+  486  git commit -m "update"
+  487  git status
+  488  git push
+  489  git -M main
+  490  tree
+  491  apt instal tree
+  492  history
+  493  sudo apt install tree
+  494  tree
+  495  git branch -M main
+  496  git push --set-upstream origin main
+  497  git remote
+  498  git remote -v
+  499  flux bootstrap github --branch=main --context=t1.aws.traefiklabs.tech --owner=${GITHUB_USER} --repository=${GITHUB_REPO} --path=clusters/staging --components-extra=image-reflector-controller,image-automation-controller  \
+  500  flux bootstrap github --branch=main --owner=unixdaddy --repository=flux-traefik-demo --path=clusters/production --components-extra=image-reflector-controller,image-automation-controller  --personal
+  501  curl -s https://fluxcd.io/install.sh | sudo bash 
+  502  gh
+  503  flux bootstrap github --branch=main --owner=unixdaddy --repository=flux-traefik-demo --path=clusters/production --components-extra=image-reflector-controller,image-automation-controller  --personal
+  504  kubectl get ns
+  505  kubectl get all -n traefik-production 
+  506  kubectl describe deployment -n traefik-production traefik 
+  507  flux get all
+  508  tree
+  509  more infrastructure/crds/traefik-crds.yaml 
+  510  ls
+  511  cat > ./apps/base/whoami/deployment.yaml << EOF
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: whoamiv1
+  labels:
+    name: whoamiv1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      task: whoamiv1
+  template:
+    metadata:
+      labels:
+        task: whoamiv1
+    spec:
+      containers:
+        - name: whoamiv1
+          image: traefik/traefikee-webapp-demo:v2
+          args:
+            - -ascii
+            - -name=FOO
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 80
+            failureThreshold: 1
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            successThreshold: 1
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whoamiv1
+  namespace: app
+spec:
+  ports:
+    - name: http
+      port: 80
+  selector:
+    task: whoamiv1
+EOF
+
+  512  ls
+  513  mkdir -pv ./apps/{base,staging,production}/whoami
+  514  cat > ./apps/base/whoami/deployment.yaml << EOF
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: whoamiv1
+  labels:
+    name: whoamiv1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      task: whoamiv1
+  template:
+    metadata:
+      labels:
+        task: whoamiv1
+    spec:
+      containers:
+        - name: whoamiv1
+          image: traefik/traefikee-webapp-demo:v2
+          args:
+            - -ascii
+            - -name=FOO
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 80
+            failureThreshold: 1
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            successThreshold: 1
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whoamiv1
+  namespace: app
+spec:
+  ports:
+    - name: http
+      port: 80
+  selector:
+    task: whoamiv1
+EOF
+
+  515  tree
+  516  cat > ./apps/base/whoami/ingressroute.yaml << EOF
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: whoami
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(\`fix.me\`)
+      services:
+        - kind: Service
+          name: whoamiv1
+          port: 80
+  tls:
+    certResolver: myresolver
+EOF
+
+  517  tree
+  518  cat > ./apps/base/whoami/kustomization.yaml << EOF
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - ingressroute.yaml
+EOF
+
+  519  cat > ./apps/staging/whoami/namespace.yaml <<EOF
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: whoami-staging
+EOF
+
+  520  cat > ./apps/staging/whoami/whoami-patch.yaml << EOF
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: whoamiv1
+spec:
+  replicas: 4
+  template:
+    spec:
+      containers:
+        - name: whoamiv1
+          args:
+            - -ascii
+            - -name=STAGING
+EOF
+
+  521  cat > ./apps/staging/whoami/ingressroute-patch.yaml <<EOF
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: whoami
+spec:
+  routes:
+   - kind: Rule
+     match: Host(\`whoami.t1.demo.traefiklabs.tech\`)
+     services:
+        - kind: Service
+          name: whoamiv1
+          port: 80
+EOF
+
+  522  kubectl get all -n traefik-production 
+  523  vim ./apps/staging/whoami/ingressroute-patch.yaml
+  524  more ./apps/staging/whoami/ingressroute-patch.yaml
+  525  kubectl explain IngressRoute
+  526  kubectl explain IngressRoute.spec
+  527  kubectl explain IngressRoute.spec,routes
+  528  kubectl explain IngressRoute.spec.routes
+  529  kubectl explain IngressRoute.spec.routes.match
+  530  vim ./apps/staging/whoami/ingressroute-patch.yaml
+  531  tree
+  532  cat > ./apps/staging/whoami/kustomization.yaml << EOF
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: whoami-staging
+resources:
+  - namespace.yaml
+  - ../../base/whoami
+
+patchesStrategicMerge:
+  - whoami-patch.yaml
+  - ingressroute-patch.yaml
+EOF
+
+  533  tree
+  534  cat > ./apps/production/whoami/namespace.yaml << EOF
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: whoami-production
+EOF
+
+  535  cat > ./apps/production/whoami/whoami-patch.yaml << EOF
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: whoamiv1
+spec:
+  replicas: 8
+  template:
+    spec:
+      containers:
+        - name: whoamiv1
+          args:
+            - -ascii
+            - -name=PRODUCTION
+EOF
+
+  536  cat > ./apps/production/whoami/ingressroute-patch.yaml << EOF
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: whoami
+spec:
+  routes:
+   - kind: Rule
+     match: Host(\`whoami.t2.demo.traefiklabs.tech\`)
+     services:
+        - kind: Service
+          name: whoamiv1
+          port: 80
+EOF
+
+  537  kubectl get all -n traefik-production 
+  538  vim apps/production/whoami/ingressroute-patch.yaml 
+  539  cat > ./apps/production/whoami/kustomization.yaml << EOF
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: whoami-production
+resources:
+  - namespace.yaml
+  - ../../base/whoami
+
+patchesStrategicMerge:
+  - whoami-patch.yaml
+  - ingressroute-patch.yaml
+EOF
+
+  540  tree
+  541  history
+  542  history > README
